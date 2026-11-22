@@ -85,6 +85,24 @@ describe('groups editor', () => {
     expect(screen.getByText('标识符 files 重复，宿主会拒绝保存。')).toBeTruthy()
   })
 
+  it('explains what a draft group still needs before the Host can save it', () => {
+    renderEditor([group({ identifier: '', tools: [] })])
+
+    expect(screen.getByText('填写标识符后才会保存。')).toBeTruthy()
+  })
+
+  it('asks for a tool once the identifier is filled in', () => {
+    renderEditor([group({ tools: [] })])
+
+    expect(screen.getByText('至少选择一个工具后才会保存。')).toBeTruthy()
+  })
+
+  it('reports a tool an earlier card already claims', () => {
+    renderEditor([group({ identifier: 'files', tools: ['read'] }), group({ identifier: 'docs', tools: ['read'] })])
+
+    expect(screen.getByText('工具 read 已在分组 files 中。')).toBeTruthy()
+  })
+
   it('refuses interaction while disabled', () => {
     const onChange = renderEditor([group()], { disabled: true })
 

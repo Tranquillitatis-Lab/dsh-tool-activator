@@ -1,9 +1,8 @@
 import type { ReactElement } from 'react'
 import type { GroupsEditorProps, ToolGroupDraft } from './types'
 import { CLASSES } from './constants'
+import { groupDraftProblem } from './groups'
 import { ToolActivatorButton, ToolActivatorCheckbox, ToolActivatorInput } from './primitives'
-
-const IDENTIFIER_PATTERN = /^[\w.-]+$/u
 
 function emptyGroup(): ToolGroupDraft {
   return { identifier: '', name: '', description: '', tools: [], sections: [] }
@@ -15,18 +14,6 @@ function emptyGroup(): ToolGroupDraft {
  * instead of being typed by hand.
  */
 export function GroupsEditor({ disabled, groups, toolNames, onChange }: GroupsEditorProps): ReactElement {
-  // Only the later card of a repeated identifier is flagged: the first one is
-  // the definition the duplicate collides with.
-  const duplicates = new Set<number>()
-  const seen = new Set<string>()
-  groups.forEach((group, index) => {
-    if (group.identifier === '')
-      return
-    if (seen.has(group.identifier))
-      duplicates.add(index)
-    seen.add(group.identifier)
-  })
-
   const replace = (index: number, next: ToolGroupDraft): void => {
     onChange(groups.map((group, at) => (at === index ? next : { ...group })))
   }
@@ -35,8 +22,7 @@ export function GroupsEditor({ disabled, groups, toolNames, onChange }: GroupsEd
     <div className={CLASSES.groups}>
       {groups.map((group, index) => {
         const position = index + 1
-        const invalid = group.identifier === '' || !IDENTIFIER_PATTERN.test(group.identifier)
-        const duplicate = !invalid && duplicates.has(index)
+        const problem = groupDraftProblem(groups, index)
         return (
           // eslint-disable-next-line react/no-array-index-key -- a draft group has no identity until the host saves it
           <section className={CLASSES.group} key={`group-${index}`}>
@@ -127,8 +113,7 @@ export function GroupsEditor({ disabled, groups, toolNames, onChange }: GroupsEd
                   {`为第 ${position} 组添加说明节`}
                 </ToolActivatorButton>
               </div>
-              {invalid ? <p className={CLASSES.error}>标识符只能包含字母、数字、下划线、点和连字符。</p> : null}
-              {duplicate ? <p className={CLASSES.error}>{`标识符 ${group.identifier} 重复，宿主会拒绝保存。`}</p> : null}
+              {problem === undefined ? null : <p className={CLASSES.error}>{problem}</p>}
             </div>
           </section>
         )
