@@ -1,6 +1,6 @@
 import type { ActivationCatalog } from '../types'
 import type { ConfigurationScope, ConfigurationScopeSnapshot } from './types'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ToolActivatorConfiguration } from './configuration-page'
 import { CLASSES } from './constants'
@@ -230,6 +230,76 @@ describe('tool configuration page', () => {
     })
 
     expect((await screen.findByRole('alert')).textContent).toBe('连接服务不可用，无法读取工具列表。')
+  })
+
+  it('keeps a new group local until it can be saved', async () => {
+    // Issue #11: the Host refuses an empty identifier, so writing the draft the
+    // "添加分组" button creates bounced back as "宿主拒绝了本次修改。".
+    const scope = scopeOf({ basicTools: ['read'], groups: [] })
+    renderPage(scope)
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加分组' }))
+
+    expect(screen.getByLabelText('标识符')).toHaveProperty('value', '')
+    expect(screen.getByText('填写标识符后才会保存。')).toBeTruthy()
+    expect(scope.mutate).not.toHaveBeenCalled()
+  })
+
+  it('writes the new group once it has an identifier and a tool', async () => {
+    const scope = scopeOf({ basicTools: ['read'], groups: [] })
+    renderPage(scope)
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加分组' }))
+    fireEvent.change(screen.getByLabelText('标识符'), { target: { value: 'docs' } })
+    expect(scope.mutate).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByLabelText('read'))
+
+    await waitFor(() => expect(scope.mutate).toHaveBeenCalledTimes(1))
+    expect(scope.mutate).toHaveBeenCalledWith(
+      [{ op: 'set', path: ['groups'], value: [{ identifier: 'docs', name: '', description: '', tools: ['read'], sections: [] }] }],
+      3,
+    )
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('does not send a cleared identifier to the Host', async () => {
+    const scope = scopeOf({
+      basicTools: ['read'],
+      groups: [{ identifier: 'files', name: 'Files', description: '', tools: ['read'], sections: [] }],
+    })
+    renderPage(scope)
+
+    fireEvent.change(await screen.findByLabelText('标识符'), { target: { value: '' } })
+
+    expect(screen.getByText('填写标识符后才会保存。')).toBeTruthy()
+    expect(scope.mutate).not.toHaveBeenCalled()
+  })
+
+  it('keeps an unfinished group when the document changes elsewhere', async () => {
+    let notify: () => void = () => {}
+    const snapshot: ConfigurationScopeSnapshot = {
+      revision: 3,
+      status: 'ready',
+      value: { basicTools: ['read'], groups: [] },
+      writable: true,
+    }
+    const scope: ConfigurationScope = {
+      getSnapshot: () => snapshot,
+      mutate: vi.fn(async () => true),
+      subscribe: (listener) => {
+        notify = listener
+        return () => {}
+      },
+    }
+    renderPage(scope)
+
+    fireEvent.click(await screen.findByRole('button', { name: '添加分组' }))
+    fireEvent.change(screen.getByLabelText('标识符'), { target: { value: 'docs' } })
+
+    act(() => notify())
+
+    expect(screen.getByLabelText('标识符')).toHaveProperty('value', 'docs')
   })
 
   it('renders a one-liner for the summary view', () => {

@@ -4,6 +4,7 @@ import type { ConfigurationScope, ToolActivatorConfigurationProps, ToolGroupDraf
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ACTIVATOR_TOOL_NAME } from '../constants'
 import { CLASSES } from './constants'
+import { groupsArePersistable } from './groups'
 import { GroupsEditor } from './groups-editor'
 import { ToolActivatorSwitch, ToolActivatorTag, ToolActivatorTooltip } from './primitives'
 
@@ -81,6 +82,9 @@ export function ToolActivatorConfiguration({ view, configScope, loadToolCatalog 
   const [failure, setFailure] = useState('')
   const [busy, setBusy] = useState(false)
   const aliveRef = useRef(true)
+  // A group the Host cannot take yet stays on screen as a local draft; the
+  // snapshot it would have come from must not overwrite what is being typed.
+  const unsavedGroupsRef = useRef(false)
 
   useEffect(() => {
     aliveRef.current = true
@@ -96,7 +100,8 @@ export function ToolActivatorConfiguration({ view, configScope, loadToolCatalog 
         requireApproval: readFlag(configScope, 'requireApproval'),
         autoGroupMcp: readFlag(configScope, 'autoGroupMcp'),
       })
-      setGroups(readGroups(configScope))
+      if (!unsavedGroupsRef.current)
+        setGroups(readGroups(configScope))
     }
     return configScope.subscribe(sync)
   }, [configScope])
@@ -200,7 +205,20 @@ export function ToolActivatorConfiguration({ view, configScope, loadToolCatalog 
   const applyGroups = useCallback(async (next: ToolGroupDraft[]): Promise<void> => {
     const previous = groupsForEditor
     setGroups(next)
-    await write('groups', next, () => setGroups(previous))
+    // A group becomes writable only once its identifier is valid and unique and
+    // it holds at least one tool. Until then the Host would refuse the document
+    // (empty identifier) or the runtime policy would refuse the saved group, so
+    // the draft stays local and the card itself says what is still missing.
+    if (!groupsArePersistable(next)) {
+      unsavedGroupsRef.current = true
+      setFailure('')
+      return
+    }
+    unsavedGroupsRef.current = false
+    await write('groups', next, () => {
+      unsavedGroupsRef.current = !groupsArePersistable(previous)
+      setGroups(previous)
+    })
   }, [groupsForEditor, write])
 
   if (view === 'summary')
@@ -278,7 +296,7 @@ export function ToolActivatorConfiguration({ view, configScope, loadToolCatalog 
               </section>
               <section className={CLASSES.section}>
                 <h4 className={CLASSES.sectionTitle}>工具分组</h4>
-                <p className={CLASSES.help}>一组工具共用一个标识符，模型激活该标识符即可一次拿到整组；留空则每个工具各自成为一个条目。</p>
+                <p className={CLASSES.help}>一组工具共用一个标识符，模型激活该标识符即可一次拿到整组；留空则每个工具各自成为一个条目。标识符合法且至少选中一个工具后才会保存。</p>
                 <GroupsEditor
                   disabled={busy}
                   groups={groupsForEditor}
